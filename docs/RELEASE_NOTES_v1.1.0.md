@@ -4,7 +4,7 @@ Windows x64 自包含单文件版本，无需安装 .NET 或管理员权限。
 
 ## 下载与使用
 
-1. 下载 Release 附件 `ChatGPT时区启动器.exe`。
+1. 下载 Release 附件 `ChatGPT-TimeZone-Launcher-v1.1.0-win-x64.exe`。
 2. 选择“自动跟随 ChatGPT 实际出口”或“手动选择时区”。
 3. 点击“保存并启动 ChatGPT”。
 4. 如需停用，点击“恢复 ChatGPT 默认启动方式”。
