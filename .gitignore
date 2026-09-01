@@ -1,0 +1,6 @@
+.dotnet-sdk/
+dotnet-install.ps1
+**/bin/
+**/obj/
+dist/
+*.user
