@@ -23,7 +23,7 @@
 
 ## 使用
 
-1. 从 GitHub Releases 下载 `ChatGPT-TimeZone-Launcher-v1.1.0-win-x64.exe`，放在任意普通目录后运行，无需安装和管理员权限。
+1. 从 GitHub Releases 下载 `ChatGPT-TimeZone-Launcher-v1.1.1-win-x64.exe`，放在任意普通目录后运行，无需安装和管理员权限。
 2. 选择“自动跟随 ChatGPT 实际出口”或“手动选择时区”。
 3. 点击“保存并启动 ChatGPT”。自动模式会在每次启动前重新联网检测，节点变化不会被旧缓存遮盖。
 4. 如要停用覆盖，点击醒目的“恢复 ChatGPT 默认启动方式”。此时两个模式均不选中；之后点击“启动 ChatGPT（默认方式）”会使用标准 AppX 激活，不注入 `TZ`。重新点选任一模式即可再次启用。
@@ -88,13 +88,19 @@ OpenAI 官方说明 Windows 客户端通过 Microsoft Store 分发，当前官�
 .\build.ps1
 ```
 
-脚本先运行测试，再发布 `win-x64`、自包含、压缩的单文件 EXE。输出：
+脚本先运行测试，再发布 `win-x64`、自包含、压缩的单文件 EXE，然后在独立目录验证最终 EXE 的首次启动和损坏配置恢复。任一步失败会停止。输出：
 
 ```text
 dist\win-x64\ChatGPT时区启动器.exe
 ```
 
-## 验证结果
+## v1.1.1 启动修复
+
+修复损坏配置导致窗口创建前退出的问题，并增加启动异常日志和最终 EXE 的隔离启动检查。当前回归测试 **21/21** 通过，发布 EXE 的首次启动及损坏配置启动检查均通过。详细原因、验证边界和排错方法见 [v1.1.1 修复说明](docs/RELEASE_NOTES_v1.1.1.md)。
+
+启动错误日志：`%LocalAppData%\ChatGPTTimezoneLauncher\logs`（不可写时尝试 `%TEMP%\ChatGPTTimezoneLauncher\logs`）。若无日志，请提供 Windows 版本、CPU 架构及系统错误提示，不能假定所有“无反应”都由同一原因引起。
+
+## v1.1.0 历史验证结果
 
 自动化测试 20/20 通过，覆盖：ChatGPT 美国出口与 Default 台湾出口分离、ChatGPT 节点切换、Default Proxy 切换、trace fallback/完全失败、指定 IP GeoIP fallback/完全失败、Clash 未运行、非 Clash 网络、旧版错误缓存迁移，以及原有配置、AppX 定位、手动时区、恢复默认和已运行分支。
 
