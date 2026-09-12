@@ -5,9 +5,19 @@ namespace ChatGptTimezoneLauncher;
 public sealed class ChatGptLauncher
 {
     private readonly Func<ProcessStartInfo, Process?> _startProcess;
+    private readonly Func<ChatGptInstallation, string, (bool Success, string Message)> _launchWithEnvironment;
 
-    public ChatGptLauncher(Func<ProcessStartInfo, Process?>? startProcess = null) =>
+    public ChatGptLauncher(
+        Func<ProcessStartInfo, Process?>? startProcess = null,
+        Func<ChatGptInstallation, string, (bool Success, string Message)>? launchWithEnvironment = null)
+    {
         _startProcess = startProcess ?? Process.Start;
+        _launchWithEnvironment = launchWithEnvironment ?? ((installation, timeZone) =>
+        {
+            var success = AppxProcessEnvironment.LaunchWithEnvironment(installation, timeZone, out var message);
+            return (success, message);
+        });
+    }
 
     public bool IsRunning(ChatGptInstallation installation) => FindRunning(installation).Count > 0;
 
@@ -29,17 +39,9 @@ public sealed class ChatGptLauncher
             {
                 if (!TimeZoneCatalog.IsValid(ianaTimeZone))
                     return new LaunchResult(false, false, "时区无效，未启动 ChatGPT。");
-                if (!File.Exists(installation.ExecutablePath))
-                    return new LaunchResult(false, false, $"ChatGPT 入口文件不存在，可能刚刚完成更新。请重试。\r\n{installation.ExecutablePath}");
 
-                start = new ProcessStartInfo(installation.ExecutablePath)
-                {
-                    UseShellExecute = false,
-                    WorkingDirectory = Path.GetDirectoryName(installation.ExecutablePath)!
-                };
-                start.Environment["TZ"] = ianaTimeZone;
-                if (!string.IsNullOrWhiteSpace(installation.Parameters))
-                    AddCommandLine(start, installation.Parameters);
+                var injected = _launchWithEnvironment(installation, ianaTimeZone);
+                return new LaunchResult(injected.Success, false, injected.Message);
             }
 
             _startProcess(start);
@@ -89,9 +91,4 @@ public sealed class ChatGptLauncher
         return result;
     }
 
-    private static void AddCommandLine(ProcessStartInfo start, string commandLine)
-    {
-        // Manifest parameters are package-authored and may contain quoting. Arguments preserves them verbatim.
-        start.Arguments = commandLine;
-    }
 }

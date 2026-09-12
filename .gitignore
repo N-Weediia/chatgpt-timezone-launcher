@@ -1,5 +1,8 @@
 .dotnet-sdk/
 dotnet-install.ps1
+.dotnet-cli-home/
+.appdata/
+.nuget-packages/
 **/bin/
 **/obj/
 dist/

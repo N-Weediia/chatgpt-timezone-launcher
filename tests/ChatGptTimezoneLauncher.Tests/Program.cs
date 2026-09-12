@@ -26,6 +26,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("restore/default launch has no TZ injection", TestDefaultLaunch),
     ("default activation allows an existing ChatGPT instance", TestDefaultExisting),
     ("TZ override refuses an existing ChatGPT instance", TestTzExisting),
+    ("process environment block replaces TZ only", TestEnvironmentBlock),
 };
 
 var failures = 0;
@@ -230,10 +231,12 @@ static async Task TestNotInstalled()
 static Task TestTzLaunch()
 {
     using var temp = new TempDirectory(); var exe = System.IO.Path.Combine(temp.Path, "UniqueChatGptTest.exe"); File.WriteAllBytes(exe, [0]);
-    ProcessStartInfo? captured = null; var launcher = new ChatGptLauncher(info => { captured = info; return null; });
+    string? capturedTimeZone = null;
+    var launcher = new ChatGptLauncher(
+        launchWithEnvironment: (_, timeZone) => { capturedTimeZone = timeZone; return (true, "injected"); });
     var install = FakeInstall(temp.Path, exe);
     var result = launcher.Launch(install, "America/New_York");
-    Assert(result.Success && captured?.Environment["TZ"] == "America/New_York" && !captured.UseShellExecute, "TZ was not process-local");
+    Assert(result.Success && capturedTimeZone == "America/New_York", "TZ was not process-local");
     return Task.CompletedTask;
 }
 
@@ -264,6 +267,17 @@ static Task TestTzExisting()
     var install = FakeInstall(System.IO.Path.GetDirectoryName(current)!, current);
     var result = launcher.Launch(install, "Asia/Tokyo");
     Assert(!result.Success && result.WasAlreadyRunning && !started, "existing process was incorrectly relaunched with TZ");
+    return Task.CompletedTask;
+}
+
+static Task TestEnvironmentBlock()
+{
+    var current = Encoding.Unicode.GetBytes("PATH=C:\\Windows\0TZ=Europe/London\0\0");
+    var updated = Encoding.Unicode.GetString(AppxProcessEnvironment.BuildEnvironmentBlock(
+        current, "TZ", "Asia/Shanghai"));
+    Assert(updated.Contains("PATH=C:\\Windows") && updated.Contains("TZ=Asia/Shanghai") &&
+           !updated.Contains("Europe/London") && updated.EndsWith("\0\0"),
+        "process environment block was not updated safely");
     return Task.CompletedTask;
 }
 

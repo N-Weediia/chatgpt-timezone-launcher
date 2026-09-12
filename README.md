@@ -15,6 +15,7 @@
 - `chatgpt.com/cdn-cgi/trace → 明确出口 IP → 指定 IP GeoIP → IANA timezone` 两阶段检测；
 - ChatGPT/OpenAI trace 多域名 fallback，以及 IPinfo、ipapi.co、ipwho.is 多 GeoIP fallback；
 - 动态解析当前用户的 ChatGPT AppX/MSIX 包、版本和实际入口，不写死 WindowsApps 路径；
+- 通过 AppX 激活拿到新进程 PID，暂停后更新该进程的环境块，再恢复运行，避免直接执行 WindowsApps 文件的拒绝访问；
 - 完整 IANA 时区搜索、配置损坏恢复、旧版错误缓存迁移和一键恢复默认启动；
 - 已运行检测与用户确认后的正常关闭重启，不默认强制结束 ChatGPT；
 - 自包含单文件 EXE，以及覆盖规则分流、网络失败、包更新和进程环境的自动化测试。
@@ -23,7 +24,7 @@
 
 ## 使用
 
-1. 从 GitHub Releases 下载 `ChatGPT-TimeZone-Launcher-v1.1.1-win-x64.exe`，放在任意普通目录后运行，无需安装和管理员权限。
+1. 从 GitHub Releases 下载 `ChatGPT-TimeZone-Launcher-v1.1.2-win-x64.exe`，放在任意普通目录后运行，无需安装和管理员权限。
 2. 选择“自动跟随 ChatGPT 实际出口”或“手动选择时区”。
 3. 点击“保存并启动 ChatGPT”。自动模式会在每次启动前重新联网检测，节点变化不会被旧缓存遮盖。
 4. 如要停用覆盖，点击醒目的“恢复 ChatGPT 默认启动方式”。此时两个模式均不选中；之后点击“启动 ChatGPT（默认方式）”会使用标准 AppX 激活，不注入 `TZ`。重新点选任一模式即可再次启用。
@@ -63,7 +64,7 @@ OpenAI 官方说明 Windows 客户端通过 Microsoft Store 分发，当前官�
 1. 查询当前用户的开始菜单 ChatGPT 入口和已注册 AppX/MSIX 包；
 2. 读取已注册包清单中的 `InstallLocation`、`Application Id`、`Executable` 和 `Parameters`；
 3. 对候选项评分，并优先选择版本号最新的 ChatGPT 入口；
-4. 启用覆盖时直接创建清单所指的 full-trust 桌面入口进程，并仅在该进程环境中加入 `TZ`；
+4. 启用覆盖时通过 AppX 标准激活创建 full-trust 桌面入口，取得新进程 PID 后暂停它，仅在该进程环境块中加入 `TZ`，再恢复运行；
 5. 默认方式使用 `shell:AppsFolder\<PackageFamilyName>!<AppId>` 标准激活，因此不会残留启动器注入值。
 
 本机调研时检测到的当前包是 `OpenAI.Codex_26.825.6671.0_x64__2p2nqsd0c76g0`，清单入口为 `app/ChatGPT.exe`，`EntryPoint=Windows.FullTrustApplication`。这只是验证样本，不存在于代码常量中；Store 更新后的新版本目录会在每次启动时重新发现。参考：[OpenAI Windows 客户端说明](https://help.openai.com/en/articles/9982051)、[Microsoft 的 packaged desktop app 运行说明](https://learn.microsoft.com/windows/msix/desktop/desktop-to-uwp-behind-the-scenes)、[MSIX 清单入口说明](https://learn.microsoft.com/windows/msix/desktop/desktop-to-uwp-manual-conversion)。
@@ -94,9 +95,15 @@ OpenAI 官方说明 Windows 客户端通过 Microsoft Store 分发，当前官�
 dist\win-x64\ChatGPT时区启动器.exe
 ```
 
-## v1.1.1 启动修复
+## v1.1.2 启动修复
 
-修复损坏配置导致窗口创建前退出的问题，并增加启动异常日志和最终 EXE 的隔离启动检查。当前回归测试 **21/21** 通过，发布 EXE 的首次启动及损坏配置启动检查均通过。详细原因、验证边界和排错方法见 [v1.1.1 修复说明](docs/RELEASE_NOTES_v1.1.1.md)。
+当前源码版本为 **v1.1.2**。针对部分 Windows 设备直接执行 `WindowsApps` 内 ChatGPT 文件时出现“拒绝访问”的问题，时区覆盖启动流程现改为 AppX 激活后暂停新进程、更新进程专属环境块并恢复运行；启动后会等待窗口创建并切到前台。该过程不修改系统时区、注册表或全局环境变量。
+
+当前回归测试 **22/22** 通过，发布 EXE 的首次启动及损坏配置启动检查均通过。
+
+## v1.1.1 启动修复（历史）
+
+修复损坏配置导致窗口创建前退出的问题，并增加启动异常日志和最终 EXE 的隔离启动检查。详细原因、验证边界和排错方法见 [v1.1.1 修复说明](docs/RELEASE_NOTES_v1.1.1.md)。
 
 启动错误日志：`%LocalAppData%\ChatGPTTimezoneLauncher\logs`（不可写时尝试 `%TEMP%\ChatGPTTimezoneLauncher\logs`）。若无日志，请提供 Windows 版本、CPU 架构及系统错误提示，不能假定所有“无反应”都由同一原因引起。
 
@@ -115,5 +122,5 @@ dist\win-x64\ChatGPT时区启动器.exe
 
 - 交付 EXE 为 Windows x64；ARM64 需要将构建运行时改为 `win-arm64` 后重新发布。
 - GeoIP 的城市级定位由第三方数据库提供，可能存在误差；时区字段为空或不是有效 IANA ID 时会视为失败。
-- 进程级方案依赖 ChatGPT 继续使用可直接创建的 packaged full-trust 桌面入口。若未来 Store 包改为纯 AppContainer/UWP，Windows 标准激活接口无法附加任意进程环境变量，届时启动器会明确报错而不会修改系统设置绕过。
+- 进程级方案依赖 ChatGPT 继续使用可由 AppX 激活的 packaged full-trust 桌面入口，并允许同一用户进程的短暂暂停和内存参数更新。若未来 Store 包改为纯 AppContainer/UWP，或系统策略禁止访问新进程的用户态参数，启动器会明确报错而不会修改系统设置绕过。
 - 未签名的独立 EXE 可能触发 Windows SmartScreen 提示；源码构建本身不包含代码签名证书。
