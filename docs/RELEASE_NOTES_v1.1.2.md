@@ -1,5 +1,7 @@
 # v1.1.2 — AppX 激活与进程级时区覆盖
 
+本版本基于 404elf 的原始 `chatgpt-timezone-launcher` 源码修改而来，感谢原作者的工作。MIT License 和版权声明保留。
+
 ## 修复
 
 - 不再直接执行 `C:\Program Files\WindowsApps\...\ChatGPT.exe`，避免受保护的 WindowsApps 路径返回“拒绝访问”。
