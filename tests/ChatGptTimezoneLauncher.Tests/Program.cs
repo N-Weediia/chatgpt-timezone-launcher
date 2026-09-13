@@ -27,6 +27,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("default activation allows an existing ChatGPT instance", TestDefaultExisting),
     ("TZ override refuses an existing ChatGPT instance", TestTzExisting),
     ("process environment block replaces TZ only", TestEnvironmentBlock),
+    ("usage payload parses and converts to Beijing time", TestUsageParser),
 };
 
 var failures = 0;
@@ -245,7 +246,12 @@ static Task TestDefaultLaunch()
     using var temp = new TempDirectory(); var exe = System.IO.Path.Combine(temp.Path, "UniqueChatGptDefaultTest.exe"); File.WriteAllBytes(exe, [0]);
     ProcessStartInfo? captured = null; var launcher = new ChatGptLauncher(info => { captured = info; return null; });
     var result = launcher.Launch(FakeInstall(temp.Path, exe), null);
-    Assert(result.Success && captured?.FileName == "explorer.exe" && !captured.Environment.ContainsKey("TZ") &&
+    var inheritedTz = Environment.GetEnvironmentVariable("TZ");
+    var noExplicitOverride = captured is not null &&
+        ((inheritedTz is null && !captured.Environment.ContainsKey("TZ")) ||
+         (inheritedTz is not null && captured.Environment.TryGetValue("TZ", out var capturedTz) && capturedTz == inheritedTz));
+    Assert(result.Success && captured?.FileName == "explorer.exe" &&
+           noExplicitOverride &&
            captured.ArgumentList.Single().Contains("shell:AppsFolder"), "default launch retained TZ or skipped AppX activation");
     return Task.CompletedTask;
 }
@@ -278,6 +284,18 @@ static Task TestEnvironmentBlock()
     Assert(updated.Contains("PATH=C:\\Windows") && updated.Contains("TZ=Asia/Shanghai") &&
            !updated.Contains("Europe/London") && updated.EndsWith("\0\0"),
         "process environment block was not updated safely");
+    return Task.CompletedTask;
+}
+
+static Task TestUsageParser()
+{
+    var snapshot = UsageService.ParseResponse(
+        """{"plan_type":"plus","rate_limit":{"primary_window":{"used_percent":43,"limit_window_seconds":18000,"reset_after_seconds":3600,"reset_at":1789257600},"secondary_window":{"used_percent":33,"limit_window_seconds":604800,"reset_after_seconds":86400,"reset_at":1789776000}}}""",
+        DateTimeOffset.Parse("2026-09-12T00:00:00+00:00"));
+    Assert(snapshot.Primary.RemainingPercent == 57 && snapshot.Primary.WindowSeconds == 18000 &&
+           snapshot.Primary.ResetAtBeijing == DateTimeOffset.Parse("2026-09-13T08:00:00+08:00") &&
+           snapshot.Secondary.RemainingPercent == 67 && snapshot.PlanType == "plus",
+        "usage payload or Beijing conversion failed");
     return Task.CompletedTask;
 }
 

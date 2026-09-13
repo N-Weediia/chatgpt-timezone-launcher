@@ -14,7 +14,8 @@ internal static class Program
                 ? UnhandledExceptionMode.ThrowException : UnhandledExceptionMode.CatchException);
             Application.ThreadException += (_, e) => StartupDiagnostics.Report(e.Exception);
             ApplicationConfiguration.Initialize();
-            using var form = new MainForm(selfTest ? new ConfigStore(Path.GetFullPath(args[1])) : null);
+            using var form = new MainForm(selfTest ? new ConfigStore(Path.GetFullPath(args[1])) : null,
+                enableTray: !selfTest);
             if (selfTest)
             {
                 // Exercise the real window and message loop, without touching user settings or ChatGPT.
