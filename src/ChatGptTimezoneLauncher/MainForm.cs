@@ -59,6 +59,7 @@ public sealed class MainForm : Form
         ClientSize = new Size(860, 980);
         Font = new Font("Microsoft YaHei UI", 9.5f);
         AutoScaleMode = AutoScaleMode.Dpi;
+        ConfigureInitialBounds();
 
         BuildUi();
         LoadConfigIntoUi();
@@ -101,7 +102,7 @@ public sealed class MainForm : Form
             Dock = DockStyle.Fill,
             Padding = new Padding(24, 20, 24, 20),
             ColumnCount = 1,
-            RowCount = 9,
+            RowCount = 7,
             AutoScroll = true,
             AutoSize = false,
             GrowStyle = TableLayoutPanelGrowStyle.AddRows
@@ -111,10 +112,7 @@ public sealed class MainForm : Form
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
         var title = new Label { Text = "ChatGPT 时区启动器", Font = new Font(Font.FontFamily, 18, FontStyle.Bold), AutoSize = true, Margin = new Padding(0, 0, 0, 4) };
         var subtitle = new Label { Text = "只为本次启动的 ChatGPT 进程设置时区，不修改 Windows 系统时区。", ForeColor = Color.DimGray, AutoSize = true, Margin = new Padding(0, 0, 0, 16) };
@@ -162,22 +160,40 @@ public sealed class MainForm : Form
         usage.Controls.Add(usageActions, 1, 3);
         usageGroup.Controls.Add(usage); root.Controls.Add(usageGroup);
 
-        var buttons = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = false, Height = 58, ColumnCount = 2, Margin = new Padding(0, 0, 0, 12) };
+        var buttons = new TableLayoutPanel { Dock = DockStyle.Bottom, AutoSize = false, Height = 58, ColumnCount = 2, Margin = new Padding(24, 0, 24, 12) };
         buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
         _launchButton.AutoSize = false; _launchButton.Dock = DockStyle.Fill; _launchButton.BackColor = Color.FromArgb(37, 99, 235); _launchButton.ForeColor = Color.White; _launchButton.FlatStyle = FlatStyle.Flat;
         _restoreButton.AutoSize = false; _restoreButton.Dock = DockStyle.Fill; _restoreButton.BackColor = Color.FromArgb(255, 247, 237); _restoreButton.ForeColor = Color.FromArgb(154, 52, 18); _restoreButton.FlatStyle = FlatStyle.Flat;
         _launchButton.Margin = new Padding(0, 0, 6, 0); _restoreButton.Margin = new Padding(6, 0, 0, 0);
-        buttons.Controls.Add(_launchButton); buttons.Controls.Add(_restoreButton); root.Controls.Add(buttons);
+        buttons.Controls.Add(_launchButton); buttons.Controls.Add(_restoreButton);
 
         var detailsGroup = new GroupBox { Text = "状态与诊断", Dock = DockStyle.Fill, Padding = new Padding(10), Margin = new Padding(0, 0, 0, 12), MinimumSize = new Size(0, 100) };
         detailsGroup.Controls.Add(_details); root.Controls.Add(detailsGroup);
-        var footer = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = false, Height = 34, ColumnCount = 3 };
+        var footer = new TableLayoutPanel { Dock = DockStyle.Bottom, AutoSize = false, Height = 34, ColumnCount = 3, Margin = new Padding(24, 0, 24, 8) };
         footer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 155)); footer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190)); footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         _shortcutButton.Dock = DockStyle.Fill; _shortcutButton.AutoSize = false; _shortcutButton.Margin = new Padding(0, 0, 6, 0);
         _closeToTrayCheck.Dock = DockStyle.Fill; _closeToTrayCheck.Margin = new Padding(4, 5, 4, 0);
         var configLabel = new Label { Text = "配置：%LocalAppData%\\ChatGPTTimezoneLauncher", AutoSize = false, Dock = DockStyle.Fill, AutoEllipsis = true, ForeColor = Color.Gray, TextAlign = ContentAlignment.MiddleLeft };
         footer.Controls.Add(_shortcutButton, 0, 0); footer.Controls.Add(_closeToTrayCheck, 1, 0); footer.Controls.Add(configLabel, 2, 0);
-        root.Controls.Add(footer); Controls.Add(root);
+        Controls.Add(root);
+        Controls.Add(footer);
+        Controls.Add(buttons);
+    }
+
+    private void ConfigureInitialBounds()
+    {
+        var workArea = Screen.FromPoint(Cursor.Position).WorkingArea;
+        // On compact or high-DPI screens a restored 860x980 window cannot fit.
+        // Maximizing here keeps the fixed action bar visible from the first launch.
+        if (workArea.Width < 1100 || workArea.Height < 920)
+        {
+            WindowState = FormWindowState.Maximized;
+            return;
+        }
+
+        var width = Math.Min(980, workArea.Width - 24);
+        var height = Math.Min(1000, workArea.Height - 24);
+        ClientSize = new Size(Math.Max(720, width), Math.Max(760, height));
     }
 
     private async Task DetectAsync()
