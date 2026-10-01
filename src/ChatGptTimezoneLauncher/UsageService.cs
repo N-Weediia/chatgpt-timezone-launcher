@@ -39,7 +39,7 @@ public sealed class UsageService : IDisposable
 
         using var request = new HttpRequestMessage(HttpMethod.Get, UsageEndpoint);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-        request.Headers.UserAgent.ParseAdd("ChatGPT-TimeZone-Launcher/1.2.0");
+        request.Headers.UserAgent.ParseAdd("ChatGPT-TimeZone-Launcher/1.2.1");
         using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
