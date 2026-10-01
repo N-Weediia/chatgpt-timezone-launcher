@@ -20,6 +20,7 @@ public sealed class MainForm : Form
     private readonly HashSet<string> _usageReminderKeys = [];
     private NotifyIcon? _trayIcon;
     private ContextMenuStrip? _trayMenu;
+    private Icon? _trayIconAsset;
 
     private readonly RadioButton _autoRadio = new() { Text = "自动跟随 ChatGPT 实际出口", AutoSize = true };
     private readonly RadioButton _manualRadio = new() { Text = "手动选择时区", AutoSize = true };
@@ -480,9 +481,12 @@ public sealed class MainForm : Form
         _trayMenu.Items.Add("显示启动器", null, (_, _) => ShowFromTray());
         _trayMenu.Items.Add(new ToolStripSeparator());
         _trayMenu.Items.Add("退出", null, (_, _) => ExitApplication());
+        _trayIconAsset = Environment.ProcessPath is { } processPath
+            ? Icon.ExtractAssociatedIcon(processPath)
+            : null;
         _trayIcon = new NotifyIcon
         {
-            Icon = SystemIcons.Application,
+            Icon = _trayIconAsset ?? SystemIcons.Application,
             Text = "ChatGPT 时区启动器",
             ContextMenuStrip = _trayMenu,
             Visible = true
@@ -532,6 +536,7 @@ public sealed class MainForm : Form
         _usageService.Dispose();
         if (_trayIcon is not null) _trayIcon.Visible = false;
         _trayIcon?.Dispose(); _trayMenu?.Dispose();
+        _trayIconAsset?.Dispose();
         _statusTimer.Dispose(); _usageRefreshTimer.Dispose(); _usageCountdownTimer.Dispose();
         _lifetime.Dispose();
     }

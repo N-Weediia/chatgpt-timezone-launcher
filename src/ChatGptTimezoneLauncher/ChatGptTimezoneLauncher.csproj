@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>ChatGPT时区启动器</AssemblyName>
+    <ApplicationIcon>chatgpt-timezone-launcher.ico</ApplicationIcon>
     <RootNamespace>ChatGptTimezoneLauncher</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
