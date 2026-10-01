@@ -78,7 +78,7 @@ public static class AppxProcessEnvironment
             ThrowNtStatus(NtResumeProcess(processHandle), "无法恢复 ChatGPT 进程");
             suspended = false;
 
-            var focused = FocusMainWindow(processId);
+            var focused = FocusMainWindow(installation, processId);
             message = focused
                 ? $"已通过 AppX 激活 ChatGPT，注入本次进程时区并已切到前台：{ianaTimeZone}"
                 : $"已通过 AppX 激活 ChatGPT，并在恢复运行前注入本次进程时区：{ianaTimeZone}\r\nChatGPT 已启动，但窗口尚未创建；请查看任务栏。";
@@ -165,25 +165,54 @@ public static class AppxProcessEnvironment
             throw new Win32Exception(unchecked((int)status), operation);
     }
 
-    private static bool FocusMainWindow(uint processId)
+    private static bool FocusMainWindow(ChatGptInstallation installation, uint activatedProcessId)
     {
-        // Electron can create its window a short time after AppX activation returns.
-        // Give the new main process a bounded grace period without blocking forever.
-        for (var attempt = 0; attempt < 30; attempt++)
+        // AppX activation may return a bootstrap or browser process PID. The visible
+        // Electron window can belong to a later ChatGPT.exe child, so inspect all
+        // processes from this package instead of waiting on only the returned PID.
+        var expectedName = Path.GetFileNameWithoutExtension(installation.ExecutablePath);
+        var root = installation.InstallLocation.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        for (var attempt = 0; attempt < 100; attempt++)
         {
+            var processes = new List<Process>();
+            try { processes.Add(Process.GetProcessById(checked((int)activatedProcessId))); } catch { }
             try
             {
-                using var process = Process.GetProcessById(checked((int)processId));
-                process.Refresh();
-                if (process.MainWindowHandle != IntPtr.Zero)
+                foreach (var process in Process.GetProcessesByName(expectedName))
                 {
-                    ShowWindow(process.MainWindowHandle, ShowNormal);
-                    _ = SetForegroundWindow(process.MainWindowHandle);
-                    return true;
+                    if (processes.Any(existing => existing.Id == process.Id))
+                    {
+                        process.Dispose();
+                        continue;
+                    }
+                    try
+                    {
+                        var path = process.MainModule?.FileName;
+                        if (path is not null && path.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                            processes.Add(process);
+                        else
+                            process.Dispose();
+                    }
+                    catch { process.Dispose(); }
                 }
-                if (process.HasExited) return false;
             }
-            catch { return false; }
+            catch { }
+
+            foreach (var process in processes)
+            {
+                try
+                {
+                    process.Refresh();
+                    if (process.MainWindowHandle != IntPtr.Zero)
+                    {
+                        ShowWindow(process.MainWindowHandle, ShowNormal);
+                        _ = SetForegroundWindow(process.MainWindowHandle);
+                        return true;
+                    }
+                }
+                catch { }
+                finally { process.Dispose(); }
+            }
             Thread.Sleep(100);
         }
         return false;
