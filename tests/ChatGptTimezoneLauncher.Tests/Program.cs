@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Net;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using ChatGptTimezoneLauncher;
 
@@ -9,6 +11,9 @@ var tests = new (string Name, Func<Task> Run)[]
     ("config save/load and backup", TestConfigSaveLoad),
     ("corrupt config safely defaults", TestCorruptConfig),
     ("main window survives corrupt config", TestCorruptConfigWindow),
+    ("mode selection and manual input", TestModeSelection),
+    ("light and dark themes remain readable", TestThemeContrast),
+    ("usage percentages and reset details are displayed", TestUsageDisplay),
     ("legacy self-exit cache is discarded", TestLegacyDetectionCache),
     ("Cloudflare trace parser", TestTraceParser),
     ("ChatGPT US route wins while default route is TW", TestSplitRouting),
@@ -90,6 +95,85 @@ static Task TestCorruptConfigWindow()
     if (error is not null) throw error;
     Assert(File.ReadAllText(path) == "{broken", "corrupt config was changed");
     return Task.CompletedTask;
+}
+
+static Task TestModeSelection()
+{
+    using var temp = new TempDirectory();
+    RunOnSta(() =>
+    {
+        using var form = new MainForm(new ConfigStore(temp.Path), enableTray: false, enableUsageRefresh: false, darkThemeOverride: false);
+        form.Show();
+        Application.DoEvents();
+        var auto = (RadioButton)form.Controls.Find("AutoMode", true).Single();
+        var manual = (RadioButton)form.Controls.Find("ManualMode", true).Single();
+        var box = (ComboBox)form.Controls.Find("TimeZoneBox", true).Single();
+        var detect = (Button)form.Controls.Find("DetectButton", true).Single();
+        Assert(box.Enabled && !manual.Checked && detect.Enabled, "default mode or editable search is incorrect");
+        manual.Checked = true;
+        Assert(!detect.Enabled, "manual mode did not disable automatic detection");
+        auto.Checked = true;
+        Assert(detect.Enabled, "automatic mode did not enable detection");
+        box.Focus();
+        Application.DoEvents();
+        Assert(box.ContainsFocus, "could not focus the timezone field");
+        var info = new UiNative.ComboBoxInfo { Size = Marshal.SizeOf<UiNative.ComboBoxInfo>() };
+        Assert(UiNative.GetComboBoxInfo(box.Handle, ref info), "could not locate the editable timezone field");
+        UiNative.SendMessage(info.Item, 0x0102, new IntPtr('X'), IntPtr.Zero); // WM_CHAR
+        Assert(manual.Checked && !detect.Enabled, "typing a timezone did not switch to manual mode");
+        form.Close();
+    });
+    return Task.CompletedTask;
+}
+
+static Task TestThemeContrast()
+{
+    if (SystemInformation.HighContrast) return Task.CompletedTask;
+    using var temp = new TempDirectory();
+    RunOnSta(() =>
+    {
+        using var light = new MainForm(new ConfigStore(temp.Path), enableTray: false, enableUsageRefresh: false, darkThemeOverride: false);
+        using var dark = new MainForm(new ConfigStore(temp.Path), enableTray: false, enableUsageRefresh: false, darkThemeOverride: true);
+        var lightField = (ComboBox)light.Controls.Find("TimeZoneBox", true).Single();
+        var darkField = (ComboBox)dark.Controls.Find("TimeZoneBox", true).Single();
+        Assert(light.BackColor.GetBrightness() > 0.8f && lightField.ForeColor.GetBrightness() < 0.25f,
+            "light theme does not provide readable text");
+        Assert(dark.BackColor.GetBrightness() < 0.25f && darkField.ForeColor.GetBrightness() > 0.7f &&
+            darkField.BackColor.GetBrightness() < 0.25f, "dark theme does not provide readable text");
+    });
+    return Task.CompletedTask;
+}
+
+static Task TestUsageDisplay()
+{
+    using var temp = new TempDirectory();
+    RunOnSta(() =>
+    {
+        using var form = new MainForm(new ConfigStore(temp.Path), enableTray: false, enableUsageRefresh: false);
+        var now = DateTimeOffset.UtcNow;
+        var sample = new UsageSnapshot("Plus", new UsageWindow(43, 18000, 3600, now.AddHours(1)),
+            new UsageWindow(12, 604800, 86400, now.AddDays(1)), now);
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+        typeof(MainForm).GetField("_usageSnapshot", flags)!.SetValue(form, sample);
+        typeof(MainForm).GetMethod("UpdateUsageCountdown", flags)!.Invoke(form, null);
+        var fiveHour = (Label)form.Controls.Find("FiveHourRemaining", true).Single();
+        var weekly = (Label)form.Controls.Find("WeeklyRemaining", true).Single();
+        var details = (Label)form.Controls.Find("FiveHourDetails", true).Single();
+        Assert(fiveHour.Text == "57%" && weekly.Text == "88%" &&
+            details.Text.Contains("已用 43%") && details.Text.Contains("北京时间") && details.Height > 0,
+            "usage values or reset details were not shown correctly");
+    });
+    return Task.CompletedTask;
+}
+
+static void RunOnSta(Action action)
+{
+    Exception? error = null;
+    var thread = new Thread(() => { try { action(); } catch (Exception ex) { error = ex; } });
+    thread.SetApartmentState(ApartmentState.STA);
+    thread.Start();
+    Assert(thread.Join(TimeSpan.FromSeconds(20)), "UI test timed out");
+    if (error is not null) throw error;
 }
 
 static Task TestLegacyDetectionCache()
@@ -338,4 +422,22 @@ sealed class TempDirectory : IDisposable
     public string Path { get; } = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "ChatGptTzTests", Guid.NewGuid().ToString("N"));
     public TempDirectory() => Directory.CreateDirectory(Path);
     public void Dispose() { try { Directory.Delete(Path, true); } catch { } }
+}
+
+static class UiNative
+{
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Rect { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ComboBoxInfo
+    {
+        public int Size;
+        public Rect ItemRect, ButtonRect;
+        public uint ButtonState;
+        public IntPtr Combo, Item, List;
+    }
+    [DllImport("user32.dll")]
+    public static extern bool GetComboBoxInfo(IntPtr combo, ref ComboBoxInfo info);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
 }

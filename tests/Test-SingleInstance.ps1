@@ -58,6 +58,15 @@ public static class SingleInstanceTestWindows
         }, IntPtr.Zero);
         return result;
     }
+
+    public static void ScrollChildrenToBottom(IntPtr parent)
+    {
+        EnumChildWindows(parent, (window, _) =>
+        {
+            SendMessage(window, 0x115, new IntPtr(7), IntPtr.Zero); // WM_VSCROLL / SB_BOTTOM
+            return true;
+        }, IntPtr.Zero);
+    }
 }
 '@
 }
@@ -135,6 +144,8 @@ try {
 
     # Use the real close preference to exit normally, then verify the instance lock is released.
     $window = [SingleInstanceTestWindows]::FindWindow($primary.Id)
+    [SingleInstanceTestWindows]::ScrollChildrenToBottom($window)
+    Wait-Until { [SingleInstanceTestWindows]::FindControl($window, '关闭窗口时隐藏到托盘') -ne [IntPtr]::Zero } 'Close-to-tray preference did not appear'
     $check = [SingleInstanceTestWindows]::FindControl($window, '关闭窗口时隐藏到托盘')
     if ($check -eq [IntPtr]::Zero) { throw 'Could not find the close-to-tray preference.' }
     [void][SingleInstanceTestWindows]::SendMessage($check, 0xF5, [IntPtr]::Zero, [IntPtr]::Zero) # BM_CLICK

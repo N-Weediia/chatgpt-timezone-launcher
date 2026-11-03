@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 
 namespace ChatGptTimezoneLauncher;
 
-public sealed class MainForm : Form
+public sealed partial class MainForm : Form
 {
     private readonly ConfigStore _configStore;
     private readonly GeoIpService _geoIp = new();
@@ -23,9 +23,9 @@ public sealed class MainForm : Form
     private ContextMenuStrip? _trayMenu;
     private Icon? _trayIconAsset;
 
-    private readonly RadioButton _autoRadio = new() { Text = "自动跟随 ChatGPT 实际出口", AutoSize = true };
-    private readonly RadioButton _manualRadio = new() { Text = "手动选择时区", AutoSize = true };
-    private readonly ComboBox _timeZoneBox = new();
+    private readonly RadioButton _autoRadio = new() { Name = "AutoMode", Text = "自动跟随 ChatGPT 实际出口", AutoSize = true };
+    private readonly RadioButton _manualRadio = new() { Name = "ManualMode", Text = "手动选择时区", AutoSize = true };
+    private readonly ComboBox _timeZoneBox = new() { Name = "TimeZoneBox", AccessibleName = "手动时区" };
     private readonly Label _overrideState = new();
     private readonly Label _detectionState = new();
     private readonly Label _ipValue = ValueLabel();
@@ -36,13 +36,15 @@ public sealed class MainForm : Form
     private readonly Label _providerValue = ValueLabel();
     private readonly Label _runtimeState = ValueLabel();
     private readonly Label _usageState = ValueLabel();
-    private readonly Label _fiveHourValue = ValueLabel();
-    private readonly Label _weeklyValue = ValueLabel();
-    private readonly Button _detectButton = new() { Text = "检测 ChatGPT 出口", AutoSize = true };
-    private readonly Button _refreshUsageButton = new() { Text = "刷新限额", AutoSize = true };
-    private readonly Button _launchButton = new() { Text = "保存并启动 ChatGPT", Height = 42, AutoSize = true };
-    private readonly Button _restoreButton = new() { Text = "恢复 ChatGPT 默认启动方式", Height = 42, AutoSize = true };
-    private readonly Button _shortcutButton = new() { Text = "创建桌面快捷方式", AutoSize = true };
+    private readonly Label _fiveHourValue = ValueLabel("FiveHourRemaining");
+    private readonly Label _weeklyValue = ValueLabel("WeeklyRemaining");
+    private readonly Label _fiveHourDetail = ValueLabel("FiveHourDetails");
+    private readonly Label _weeklyDetail = ValueLabel("WeeklyDetails");
+    private readonly Button _detectButton = new IndustrialButton { Name = "DetectButton", Text = "检测 ChatGPT 出口" };
+    private readonly Button _refreshUsageButton = new IndustrialButton { Text = "刷新限额" };
+    private readonly Button _launchButton = new IndustrialButton { Text = "保存并启动 ChatGPT", Primary = true };
+    private readonly Button _restoreButton = new IndustrialButton { Text = "恢复 ChatGPT 默认启动方式" };
+    private readonly Button _shortcutButton = new IndustrialButton { Text = "创建桌面快捷方式" };
     private readonly CheckBox _usageReminderCheck = new() { Text = "接近重置时提醒（北京时间）", AutoSize = true };
     private readonly CheckBox _closeToTrayCheck = new() { Text = "关闭窗口时隐藏到托盘", AutoSize = true };
     private readonly TextBox _details = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Height = 84, Dock = DockStyle.Fill };
@@ -50,16 +52,18 @@ public sealed class MainForm : Form
     private readonly System.Windows.Forms.Timer _usageRefreshTimer = new() { Interval = 60_000 };
     private readonly System.Windows.Forms.Timer _usageCountdownTimer = new() { Interval = 1000 };
 
-    public MainForm(ConfigStore? configStore = null, bool enableTray = true, bool enableUsageRefresh = true)
+    public MainForm(ConfigStore? configStore = null, bool enableTray = true, bool enableUsageRefresh = true, bool? darkThemeOverride = null)
     {
+        _darkThemeOverride = darkThemeOverride;
         _configStore = configStore ?? new ConfigStore();
         var loaded = _configStore.Load();
         _config = loaded.Config;
         Text = "ChatGPT 时区启动器";
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(720, 760);
-        ClientSize = new Size(860, 980);
-        Font = new Font("Microsoft YaHei UI", 9.5f);
+        MinimumSize = new Size(720, 620);
+        ClientSize = new Size(1060, 820);
+        Font = new Font("Microsoft YaHei UI", 9f);
+        AutoScaleDimensions = new SizeF(96f, 96f);
         AutoScaleMode = AutoScaleMode.Dpi;
         ConfigureInitialBounds();
 
@@ -79,7 +83,9 @@ public sealed class MainForm : Form
         _shortcutButton.Click += (_, _) => CreateShortcut();
         _usageReminderCheck.CheckedChanged += (_, _) => SavePreference();
         _closeToTrayCheck.CheckedChanged += (_, _) => SavePreference();
-        _timeZoneBox.SelectedIndexChanged += (_, _) => { if (_timeZoneBox.Focused) _manualRadio.Checked = true; };
+        _timeZoneBox.SelectedIndexChanged += (_, _) => { if (_timeZoneBox.ContainsFocus) _manualRadio.Checked = true; };
+        _timeZoneBox.SelectionChangeCommitted += (_, _) => _manualRadio.Checked = true;
+        _timeZoneBox.TextUpdate += (_, _) => { if (_timeZoneBox.ContainsFocus) _manualRadio.Checked = true; };
         _statusTimer.Tick += (_, _) => UpdateRuntimeState();
         _usageRefreshTimer.Tick += async (_, _) => await RefreshUsageAsync(false);
         _usageCountdownTimer.Tick += (_, _) => UpdateUsageCountdown();
@@ -87,6 +93,8 @@ public sealed class MainForm : Form
         FormClosed += OnFormClosed;
         Shown += async (_, _) =>
         {
+            SubscribeToThemeChanges();
+            BeginInvoke(() => _timeZoneBox.Select(_timeZoneBox.Text.Length, 0));
             _statusTimer.Start();
             _usageCountdownTimer.Start();
             if (enableUsageRefresh)
@@ -98,107 +106,22 @@ public sealed class MainForm : Form
 
         if (loaded.Warning is not null)
             _details.Text = loaded.Warning;
-    }
-
-    private void BuildUi()
-    {
-        var root = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            Padding = new Padding(24, 20, 24, 20),
-            ColumnCount = 1,
-            RowCount = 7,
-            AutoScroll = true,
-            AutoSize = false,
-            GrowStyle = TableLayoutPanelGrowStyle.AddRows
-        };
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-
-        var title = new Label { Text = "ChatGPT 时区启动器", Font = new Font(Font.FontFamily, 18, FontStyle.Bold), AutoSize = true, Margin = new Padding(0, 0, 0, 4) };
-        var subtitle = new Label { Text = "只为本次启动的 ChatGPT 进程设置时区，不修改 Windows 系统时区。", ForeColor = Color.DimGray, AutoSize = true, Margin = new Padding(0, 0, 0, 16) };
-        var titlePanel = new FlowLayoutPanel { AutoSize = true, FlowDirection = FlowDirection.TopDown, Dock = DockStyle.Fill, WrapContents = false };
-        titlePanel.Controls.Add(title); titlePanel.Controls.Add(subtitle);
-        root.Controls.Add(titlePanel);
-
-        var statePanel = new Panel { Height = 48, Dock = DockStyle.Fill, BackColor = Color.FromArgb(239, 246, 255), Margin = new Padding(0, 0, 0, 14) };
-        _overrideState.AutoSize = true; _overrideState.Location = new Point(14, 14); _overrideState.Font = new Font(Font, FontStyle.Bold);
-        statePanel.Controls.Add(_overrideState); root.Controls.Add(statePanel);
-
-        var modeGroup = new GroupBox { Text = "模式", Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(14, 10, 14, 12), Margin = new Padding(0, 0, 0, 12) };
-        var modes = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, Dock = DockStyle.Fill, AutoSize = true, WrapContents = false };
-        _autoRadio.Margin = new Padding(3, 5, 3, 6); _manualRadio.Margin = new Padding(3, 2, 3, 3);
-        modes.Controls.Add(_autoRadio); modes.Controls.Add(_manualRadio); modeGroup.Controls.Add(modes); root.Controls.Add(modeGroup);
-
-        var statusGroup = new GroupBox { Text = "ChatGPT 出口检测", Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(14, 10, 14, 12), Margin = new Padding(0, 0, 0, 12) };
-        var status = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 9 };
-        status.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 145)); status.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        _detectionState.AutoSize = false; _detectionState.Dock = DockStyle.Fill; _detectionState.Height = 24;
-        AddRow(status, 0, "检测状态", _detectionState); AddRow(status, 1, "ChatGPT 出口 IP", _ipValue);
-        AddRow(status, 2, "实际命中代理组", _proxyGroupValue); AddRow(status, 3, "当前节点", _proxyNodeValue);
-        AddRow(status, 4, "位置", _locationValue); AddRow(status, 5, "IANA 时区", _zoneValue);
-        AddRow(status, 6, "检测方式", _providerValue); AddRow(status, 7, "ChatGPT 进程", _runtimeState);
-        _detectButton.Margin = new Padding(0, 9, 0, 0); status.Controls.Add(_detectButton, 1, 8);
-        statusGroup.Controls.Add(status); root.Controls.Add(statusGroup);
-
-        var manualGroup = new GroupBox { Text = "手动时区", Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(14, 10, 14, 12), Margin = new Padding(0, 0, 0, 12) };
-        var manual = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 1, RowCount = 2 };
-        manual.Controls.Add(new Label { Text = "输入城市或时区片段搜索，或从列表选择标准 IANA 时区：", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 0, 0, 7) });
-        _timeZoneBox.Dock = DockStyle.Top; _timeZoneBox.DropDownStyle = ComboBoxStyle.DropDown; _timeZoneBox.AutoCompleteMode = AutoCompleteMode.SuggestAppend;
-        _timeZoneBox.AutoCompleteSource = AutoCompleteSource.ListItems; _timeZoneBox.MaxDropDownItems = 14;
-        _timeZoneBox.Items.AddRange(TimeZoneCatalog.All.Cast<object>().ToArray()); manual.Controls.Add(_timeZoneBox);
-        manualGroup.Controls.Add(manual); root.Controls.Add(manualGroup);
-
-        var usageGroup = new GroupBox { Text = "Codex 限额与北京时间重置提醒", Dock = DockStyle.Fill, AutoSize = true, Padding = new Padding(14, 10, 14, 12), Margin = new Padding(0, 0, 0, 12) };
-        var usage = new TableLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, ColumnCount = 2, RowCount = 4 };
-        usage.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 145)); usage.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        AddRow(usage, 0, "更新时间", _usageState);
-        AddRow(usage, 1, "5 小时限额", _fiveHourValue);
-        AddRow(usage, 2, "每周限额", _weeklyValue);
-        var usageActions = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = true, Margin = new Padding(0, 4, 0, 0) };
-        usageActions.Controls.Add(_refreshUsageButton);
-        usageActions.Controls.Add(_usageReminderCheck);
-        usage.Controls.Add(usageActions, 1, 3);
-        usageGroup.Controls.Add(usage); root.Controls.Add(usageGroup);
-
-        var buttons = new TableLayoutPanel { Dock = DockStyle.Bottom, AutoSize = false, Height = 58, ColumnCount = 2, Margin = new Padding(24, 0, 24, 12) };
-        buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50)); buttons.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
-        _launchButton.AutoSize = false; _launchButton.Dock = DockStyle.Fill; _launchButton.BackColor = Color.FromArgb(37, 99, 235); _launchButton.ForeColor = Color.White; _launchButton.FlatStyle = FlatStyle.Flat;
-        _restoreButton.AutoSize = false; _restoreButton.Dock = DockStyle.Fill; _restoreButton.BackColor = Color.FromArgb(255, 247, 237); _restoreButton.ForeColor = Color.FromArgb(154, 52, 18); _restoreButton.FlatStyle = FlatStyle.Flat;
-        _launchButton.Margin = new Padding(0, 0, 6, 0); _restoreButton.Margin = new Padding(6, 0, 0, 0);
-        buttons.Controls.Add(_launchButton); buttons.Controls.Add(_restoreButton);
-
-        var detailsGroup = new GroupBox { Text = "状态与诊断", Dock = DockStyle.Fill, Padding = new Padding(10), Margin = new Padding(0, 0, 0, 12), MinimumSize = new Size(0, 100) };
-        detailsGroup.Controls.Add(_details); root.Controls.Add(detailsGroup);
-        var footer = new TableLayoutPanel { Dock = DockStyle.Bottom, AutoSize = false, Height = 34, ColumnCount = 3, Margin = new Padding(24, 0, 24, 8) };
-        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 155)); footer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190)); footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        _shortcutButton.Dock = DockStyle.Fill; _shortcutButton.AutoSize = false; _shortcutButton.Margin = new Padding(0, 0, 6, 0);
-        _closeToTrayCheck.Dock = DockStyle.Fill; _closeToTrayCheck.Margin = new Padding(4, 5, 4, 0);
-        var configLabel = new Label { Text = "配置：%LocalAppData%\\ChatGPTTimezoneLauncher", AutoSize = false, Dock = DockStyle.Fill, AutoEllipsis = true, ForeColor = Color.Gray, TextAlign = ContentAlignment.MiddleLeft };
-        footer.Controls.Add(_shortcutButton, 0, 0); footer.Controls.Add(_closeToTrayCheck, 1, 0); footer.Controls.Add(configLabel, 2, 0);
-        Controls.Add(root);
-        Controls.Add(footer);
-        Controls.Add(buttons);
+        ActiveControl = _launchButton;
     }
 
     private void ConfigureInitialBounds()
     {
         var workArea = Screen.FromPoint(Cursor.Position).WorkingArea;
-        // On compact or high-DPI screens a restored 860x980 window cannot fit.
-        // Maximizing here keeps the fixed action bar visible from the first launch.
-        if (workArea.Width < 1100 || workArea.Height < 920)
+        var scale = DeviceDpi / 96f;
+        if (workArea.Width < 1050 * scale || workArea.Height < 820 * scale)
         {
             WindowState = FormWindowState.Maximized;
             return;
         }
 
-        var width = Math.Min(980, workArea.Width - 24);
-        var height = Math.Min(1000, workArea.Height - 24);
-        ClientSize = new Size(Math.Max(720, width), Math.Max(760, height));
+        var width = Math.Min(1100, (int)(workArea.Width / scale) - 24);
+        var height = Math.Min(860, (int)(workArea.Height / scale) - 24);
+        ClientSize = new Size(Math.Max(720, width), Math.Max(620, height));
     }
 
     private async Task DetectAsync()
@@ -215,7 +138,7 @@ public sealed class MainForm : Form
         }
         else
         {
-            _detectionState.Text = "ChatGPT 出口检测失败（未猜测时区）"; _detectionState.ForeColor = Color.Firebrick;
+            _detectionState.Text = "ChatGPT 出口检测失败（未猜测时区）"; _detectionState.ForeColor = _palette.Ink;
             _details.Text = result.Message + LastSuccessText();
             if (_config.LastSuccessfulAutoDetection is not null) ShowLocationValues(_config.LastSuccessfulAutoDetection);
         }
@@ -231,7 +154,7 @@ public sealed class MainForm : Form
             SetBusy(false);
             if (!detection.Success)
             {
-                _detectionState.Text = "检测失败（未启动）"; _detectionState.ForeColor = Color.Firebrick;
+                _detectionState.Text = "检测失败（未启动）"; _detectionState.ForeColor = _palette.Ink;
                 _details.Text = detection.Message + LastSuccessText();
                 MessageBox.Show(this, "自动检测失败，因此没有启动 ChatGPT，也没有使用本机时区或旧结果。\r\n\r\n你可以立即切换到“手动选择时区”。",
                     "无法确定时区", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -286,14 +209,14 @@ public sealed class MainForm : Form
             _activeTimeZone = _config.TimeZoneOverrideEnabled ? zone : null;
             _launchStatePending = true;
             _detectionState.Text = "启动完成，正在自动刷新状态";
-            _detectionState.ForeColor = Color.ForestGreen;
+            _detectionState.ForeColor = _palette.Ink;
             UpdateRuntimeState();
             _statusTimer.Start();
         }
         else
         {
             _detectionState.Text = "启动失败";
-            _detectionState.ForeColor = Color.Firebrick;
+            _detectionState.ForeColor = _palette.Ink;
             MessageBox.Show(this, launch.Message, "启动结果", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
@@ -324,7 +247,6 @@ public sealed class MainForm : Form
 
     private void UpdateModeUi()
     {
-        _timeZoneBox.Enabled = _manualRadio.Checked;
         _detectButton.Enabled = !_manualRadio.Checked;
         _launchButton.Text = _autoRadio.Checked || _manualRadio.Checked ? "保存并启动 ChatGPT" : "启动 ChatGPT（默认方式）";
         UpdateOverrideState();
@@ -334,12 +256,12 @@ public sealed class MainForm : Form
     {
         if (!_config.TimeZoneOverrideEnabled)
         {
-            _overrideState.Text = "当前：ChatGPT 默认启动方式（不注入 TZ）"; _overrideState.ForeColor = Color.FromArgb(30, 64, 175);
+            _overrideState.Text = "ChatGPT 默认启动方式（不注入 TZ）"; _overrideState.ForeColor = _palette.Ink;
         }
         else
         {
             var zone = _config.Mode == TimeZoneMode.Manual ? _config.ManualTimeZone : _config.LastSuccessfulAutoDetection?.TimeZone ?? "等待检测";
-            _overrideState.Text = $"当前：{(_config.Mode == TimeZoneMode.Auto ? "自动时区" : "手动时区")} · {zone}"; _overrideState.ForeColor = Color.FromArgb(21, 128, 61);
+            _overrideState.Text = $"{(_config.Mode == TimeZoneMode.Auto ? "自动时区" : "手动时区")} / {zone}"; _overrideState.ForeColor = _palette.Ink;
         }
     }
 
@@ -355,7 +277,7 @@ public sealed class MainForm : Form
 
     private void ShowLocation(GeoLocation value, string state)
     {
-        _detectionState.Text = state; _detectionState.ForeColor = state.Contains("成功") ? Color.ForestGreen : Color.DimGray;
+        _detectionState.Text = state; _detectionState.ForeColor = _palette.Ink;
         ShowLocationValues(value);
     }
 
@@ -365,7 +287,7 @@ public sealed class MainForm : Form
         _proxyGroupValue.Text = value.ProxyGroup ?? "未读取（检测不依赖 Clash API）";
         _proxyNodeValue.Text = value.ProxyNode ?? "未读取（检测不依赖 Clash API）";
         _locationValue.Text = value.LocationText; _zoneValue.Text = value.TimeZone;
-        _providerValue.Text = $"{value.DetectionMethod} · {value.Provider} · {value.DetectedAt:yyyy-MM-dd HH:mm:ss}";
+        _providerValue.Text = $"{value.DetectionMethod} / {value.Provider}\r\n{value.DetectedAt:yyyy-MM-dd HH:mm:ss}";
     }
 
     private string LastSuccessText() => _config.LastSuccessfulAutoDetection is { } last
@@ -383,7 +305,7 @@ public sealed class MainForm : Form
             var snapshot = await _usageService.FetchAsync(_lifetime.Token);
             if (IsDisposed || _lifetime.IsCancellationRequested) return;
             _usageSnapshot = snapshot;
-            _usageState.Text = $"{_usageSnapshot.PlanType} · 已更新 {_usageSnapshot.FetchedAtBeijing:yyyy-MM-dd HH:mm:ss}（北京时间）";
+            _usageState.Text = $"{_usageSnapshot.PlanType} / 更新于 {_usageSnapshot.FetchedAtBeijing:yyyy-MM-dd HH:mm:ss}\r\n北京时间";
             UpdateUsageCountdown();
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
@@ -394,6 +316,8 @@ public sealed class MainForm : Form
             if (userInitiated)
             {
                 _fiveHourValue.Text = _weeklyValue.Text = "—";
+                _fiveHourDetail.Text = _weeklyDetail.Text = "";
+                _fiveHourDetail.Height = _weeklyDetail.Height = 0;
                 MessageBox.Show(this, ex.Message + "\r\n\r\n限额数据不会写入配置文件。", "限额读取失败",
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
@@ -408,18 +332,22 @@ public sealed class MainForm : Form
     private void UpdateUsageCountdown()
     {
         if (_usageSnapshot is null) return;
+        _fiveHourDetail.Height = LogicalPixels(66);
+        _weeklyDetail.Height = LogicalPixels(66);
         var now = DateTimeOffset.UtcNow;
-        _fiveHourValue.Text = FormatUsageWindow("5 小时", _usageSnapshot.Primary, now);
-        _weeklyValue.Text = FormatUsageWindow("每周", _usageSnapshot.Secondary, now);
+        _fiveHourValue.Text = $"{_usageSnapshot.Primary.RemainingPercent}%";
+        _weeklyValue.Text = $"{_usageSnapshot.Secondary.RemainingPercent}%";
+        _fiveHourDetail.Text = FormatUsageWindow(_usageSnapshot.Primary, now);
+        _weeklyDetail.Text = FormatUsageWindow(_usageSnapshot.Secondary, now);
         MaybeRemind("5 小时限额", _usageSnapshot.Primary, now);
         MaybeRemind("每周限额", _usageSnapshot.Secondary, now);
     }
 
-    private static string FormatUsageWindow(string name, UsageWindow window, DateTimeOffset now)
+    private static string FormatUsageWindow(UsageWindow window, DateTimeOffset now)
     {
         var remaining = window.ResetAtUtc - now;
         var countdown = remaining <= TimeSpan.Zero ? "等待下次刷新" : $"还有 {FormatDuration(remaining)}";
-        return $"已用 {window.UsedPercent}% · 剩余 {window.RemainingPercent}% · 重置：{window.ResetAtBeijing:yyyy-MM-dd HH:mm:ss}（北京时间）· {countdown}";
+        return $"已用 {window.UsedPercent}%\r\n重置：{window.ResetAtBeijing:yyyy-MM-dd HH:mm:ss}（北京时间）\r\n{countdown}";
     }
 
     private void MaybeRemind(string name, UsageWindow window, DateTimeOffset now)
@@ -454,7 +382,7 @@ public sealed class MainForm : Form
         if (_knownInstallation is null)
         {
             _runtimeState.Text = "尚未定位 ChatGPT";
-            _runtimeState.ForeColor = Color.DimGray;
+            _runtimeState.ForeColor = _palette.Ink;
             return;
         }
 
@@ -462,11 +390,11 @@ public sealed class MainForm : Form
         _runtimeState.Text = running
             ? (_activeTimeZone is null ? "运行中（默认启动）" : $"运行中（本次进程时区：{_activeTimeZone}）")
             : "未运行";
-        _runtimeState.ForeColor = running ? Color.ForestGreen : Color.DimGray;
+        _runtimeState.ForeColor = _palette.Ink;
         if (_launchStatePending && running)
         {
             _detectionState.Text = "ChatGPT 已启动，状态已自动更新";
-            _detectionState.ForeColor = Color.ForestGreen;
+            _detectionState.ForeColor = _palette.Ink;
             _launchStatePending = false;
         }
     }
@@ -539,6 +467,7 @@ public sealed class MainForm : Form
 
     private void OnFormClosed(object? sender, FormClosedEventArgs e)
     {
+        if (_themeEventsSubscribed) Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
         _statusTimer.Stop(); _usageRefreshTimer.Stop(); _usageCountdownTimer.Stop();
         _lifetime.Cancel();
         _usageService.Dispose();
@@ -553,7 +482,7 @@ public sealed class MainForm : Form
     {
         UseWaitCursor = busy; _detectButton.Enabled = !busy && !_manualRadio.Checked; _launchButton.Enabled = !busy; _restoreButton.Enabled = !busy;
         _refreshUsageButton.Enabled = !busy && !_usageFetchInProgress;
-        if (busy && text is not null) { _detectionState.Text = text; _detectionState.ForeColor = Color.DarkOrange; }
+        if (busy && text is not null) { _detectionState.Text = text; _detectionState.ForeColor = _palette.Ink; }
     }
 
     private void CreateShortcut()
@@ -562,18 +491,13 @@ public sealed class MainForm : Form
         catch (Exception ex) { MessageBox.Show(this, $"创建快捷方式失败：{ex.Message}", "创建失败", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
     }
 
-    private static Label ValueLabel() => new()
+    private static Label ValueLabel(string? name = null) => new()
     {
+        Name = name ?? "",
         AutoSize = false,
         Dock = DockStyle.Fill,
         AutoEllipsis = true,
         TextAlign = ContentAlignment.MiddleLeft,
         Font = new Font("Microsoft YaHei UI", 9.5f, FontStyle.Bold)
     };
-    private static void AddRow(TableLayoutPanel panel, int row, string key, Control value)
-    {
-        panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        panel.Controls.Add(new Label { Text = key + "：", AutoSize = true, ForeColor = Color.DimGray, Margin = new Padding(0, 3, 0, 5) }, 0, row);
-        value.Dock = DockStyle.Fill; value.Margin = new Padding(0, 3, 0, 5); panel.Controls.Add(value, 1, row);
-    }
 }

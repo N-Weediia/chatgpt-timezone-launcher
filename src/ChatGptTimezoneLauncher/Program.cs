@@ -21,8 +21,14 @@ internal static class Program
                 ? UnhandledExceptionMode.ThrowException : UnhandledExceptionMode.CatchException);
             Application.ThreadException += (_, e) => StartupDiagnostics.Report(e.Exception);
             ApplicationConfiguration.Initialize();
+            bool? testTheme = selfTest ? Environment.GetEnvironmentVariable("CHATGPT_TZ_TEST_THEME") switch
+            {
+                "dark" => true,
+                "light" => false,
+                _ => null
+            } : null;
             using var form = new MainForm(selfTest ? new ConfigStore(Path.GetFullPath(args[1])) : null,
-                enableTray: !selfTest || instanceTest, enableUsageRefresh: !selfTest);
+                enableTray: !selfTest || instanceTest, enableUsageRefresh: !selfTest, darkThemeOverride: testTheme);
             instance?.Listen(form);
             if (selfTest)
             {

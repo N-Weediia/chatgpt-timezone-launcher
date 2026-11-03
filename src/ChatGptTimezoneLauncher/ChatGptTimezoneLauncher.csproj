@@ -10,7 +10,7 @@
     <RootNamespace>ChatGptTimezoneLauncher</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
-    <Version>1.2.2</Version>
+    <Version>1.2.3</Version>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <PublishSelfContained>true</PublishSelfContained>
     <PublishSingleFile>true</PublishSingleFile>
@@ -18,5 +18,9 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="NodaTime" Version="3.2.2" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Fonts\Saira-Wide.ttf" />
+    <EmbeddedResource Include="Fonts\Saira-OFL.txt" />
   </ItemGroup>
 </Project>
