@@ -1,4 +1,4 @@
-param([switch]$SkipTests, [string]$DotnetPath)
+﻿param([switch]$SkipTests, [string]$DotnetPath)
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $dotnet = if ($DotnetPath) { $DotnetPath } else { Join-Path $root '.dotnet-sdk\dotnet.exe' }

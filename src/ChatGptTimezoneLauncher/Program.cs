@@ -5,17 +5,25 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
-        var selfTest = args.Length == 2 && args[0] == "--self-test";
+        var instanceTest = args.Length == 3 && args[0] == "--self-test" && args[2] == "--single-instance";
+        var selfTest = args.Length >= 2 && args[0] == "--self-test" && (args.Length == 2 || instanceTest);
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
             StartupDiagnostics.Report(e.ExceptionObject as Exception ?? new Exception(e.ExceptionObject?.ToString()));
         try
         {
+            // The startup smoke test is isolated, while the instance test exercises the real handoff.
+            using var instance = !selfTest || instanceTest
+                ? SingleInstance.StartOrActivate(instanceTest ? Path.GetFullPath(args[1]) : null)
+                : null;
+            if ((!selfTest || instanceTest) && instance is null) return 0;
+
             Application.SetUnhandledExceptionMode(selfTest
                 ? UnhandledExceptionMode.ThrowException : UnhandledExceptionMode.CatchException);
             Application.ThreadException += (_, e) => StartupDiagnostics.Report(e.Exception);
             ApplicationConfiguration.Initialize();
             using var form = new MainForm(selfTest ? new ConfigStore(Path.GetFullPath(args[1])) : null,
-                enableTray: !selfTest);
+                enableTray: !selfTest || instanceTest, enableUsageRefresh: !selfTest);
+            instance?.Listen(form);
             if (selfTest)
             {
                 // Exercise the real window and message loop, without touching user settings or ChatGPT.
@@ -23,7 +31,7 @@ internal static class Program
                 {
                     File.WriteAllText(Path.Combine(args[1], "startup-ok.txt"),
                         $"Window created; timezones={TimeZoneCatalog.All.Count}; runtime={Environment.Version}");
-                    form.Close();
+                    if (!instanceTest) form.Close();
                 });
             }
             Application.Run(form);

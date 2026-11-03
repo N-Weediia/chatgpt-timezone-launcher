@@ -1,4 +1,4 @@
-param([Parameter(Mandatory)][string]$ExePath)
+﻿param([Parameter(Mandatory)][string]$ExePath)
 $ErrorActionPreference = 'Stop'
 $exe = (Resolve-Path -LiteralPath $ExePath).Path
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('ChatGptTzSmoke-' + [guid]::NewGuid().ToString('N'))
@@ -36,3 +36,4 @@ foreach ($scenario in @('fresh', 'corrupt')) {
     Write-Output "PASS published EXE: $scenario"
 }
 Write-Output "Startup test artifacts: $testRoot"
+& (Join-Path $PSScriptRoot 'Test-SingleInstance.ps1') -ExePath $isolatedExe -TestRoot $testRoot

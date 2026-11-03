@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Runtime.InteropServices;
 
 namespace ChatGptTimezoneLauncher;
 
@@ -49,7 +50,7 @@ public sealed class MainForm : Form
     private readonly System.Windows.Forms.Timer _usageRefreshTimer = new() { Interval = 60_000 };
     private readonly System.Windows.Forms.Timer _usageCountdownTimer = new() { Interval = 1000 };
 
-    public MainForm(ConfigStore? configStore = null, bool enableTray = true)
+    public MainForm(ConfigStore? configStore = null, bool enableTray = true, bool enableUsageRefresh = true)
     {
         _configStore = configStore ?? new ConfigStore();
         var loaded = _configStore.Load();
@@ -87,9 +88,12 @@ public sealed class MainForm : Form
         Shown += async (_, _) =>
         {
             _statusTimer.Start();
-            _usageRefreshTimer.Start();
             _usageCountdownTimer.Start();
-            await RefreshUsageAsync(false);
+            if (enableUsageRefresh)
+            {
+                _usageRefreshTimer.Start();
+                await RefreshUsageAsync(false);
+            }
         };
 
         if (loaded.Warning is not null)
@@ -499,13 +503,17 @@ public sealed class MainForm : Form
         _trayIcon?.ShowBalloonTip(5000, title, message, ToolTipIcon.Info);
     }
 
-    private void ShowFromTray()
+    internal void ShowFromTray()
     {
+        var minimized = WindowState == FormWindowState.Minimized;
         ShowInTaskbar = true;
         Show();
-        WindowState = FormWindowState.Normal;
+        if (minimized) ShowWindow(Handle, 9); // SW_RESTORE also restores a previously maximized window.
         Activate();
     }
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr window, int command);
 
     private void HideToTray()
     {
