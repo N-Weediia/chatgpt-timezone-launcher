@@ -144,8 +144,10 @@ try {
 
     # Use the real close preference to exit normally, then verify the instance lock is released.
     $window = [SingleInstanceTestWindows]::FindWindow($primary.Id)
-    [SingleInstanceTestWindows]::ScrollChildrenToBottom($window)
-    Wait-Until { [SingleInstanceTestWindows]::FindControl($window, '关闭窗口时隐藏到托盘') -ne [IntPtr]::Zero } 'Close-to-tray preference did not appear'
+    Wait-Until {
+        [SingleInstanceTestWindows]::ScrollChildrenToBottom($window)
+        [SingleInstanceTestWindows]::FindControl($window, '关闭窗口时隐藏到托盘') -ne [IntPtr]::Zero
+    } 'Close-to-tray preference did not appear'
     $check = [SingleInstanceTestWindows]::FindControl($window, '关闭窗口时隐藏到托盘')
     if ($check -eq [IntPtr]::Zero) { throw 'Could not find the close-to-tray preference.' }
     [void][SingleInstanceTestWindows]::SendMessage($check, 0xF5, [IntPtr]::Zero, [IntPtr]::Zero) # BM_CLICK
